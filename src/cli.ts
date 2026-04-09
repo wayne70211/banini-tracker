@@ -80,7 +80,7 @@ program
       }
       if (opts.source === 'fb' || opts.source === 'both') {
         const fp = await fetchFacebookPosts(config.targets.facebookPageUrl, config.apifyToken, limit);
-        posts.push(...fp.map((p) => ({ ...p, id: `fb_${p.id}` })));
+        posts.push(...fp);
       }
 
       // 按時間從新到舊

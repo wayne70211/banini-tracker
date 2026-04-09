@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { homedir } from 'os';
 
 export interface Config {
@@ -45,7 +45,6 @@ export function loadConfig(): Config {
 }
 
 export function saveConfig(config: Config): void {
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true });
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
 }
 

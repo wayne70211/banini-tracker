@@ -8,19 +8,19 @@
  *   npm run cron             # 常駐排程：盤中每 30 分 + 盤後 23:00
  */
 import 'dotenv/config';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import cron from 'node-cron';
 import { fetchThreadsPosts, type ThreadsPost } from './threads.js';
 import { fetchFacebookPosts, type FacebookPost } from './facebook.js';
 import { analyzePosts } from './analyze.js';
 import { sendTelegramMessageWithConfig, formatReport } from './telegram.js';
+import { filterNewPosts as filterNew, markPostsSeen } from './seen.js';
 
 // ── Config ──────────────────────────────────────────────────
 const THREADS_USERNAME = 'banini31';
 const FB_PAGE_URL = 'https://www.facebook.com/DieWithoutBang/';
 const DATA_DIR = join(process.cwd(), 'data');
-const STATE_FILE = join(DATA_DIR, 'seen.json');
 
 const isCronMode = process.argv.includes('--cron');
 
@@ -55,13 +55,13 @@ function fromThreads(p: ThreadsPost): UnifiedPost {
     url: p.url,
     mediaType: p.mediaType,
     mediaUrl: p.mediaUrl,
-    ocrText: '',
+    ocrText: p.ocrText,
   };
 }
 
 function fromFacebook(p: FacebookPost): UnifiedPost {
   return {
-    id: `fb_${p.id}`,
+    id: p.id,
     source: 'facebook',
     text: p.text,
     ocrText: p.ocrText,
@@ -72,23 +72,6 @@ function fromFacebook(p: FacebookPost): UnifiedPost {
     mediaType: p.mediaType,
     mediaUrl: p.mediaUrl,
   };
-}
-
-// ── 去重 ────────────────────────────────────────────────────
-function loadSeenIds(): Set<string> {
-  if (!existsSync(STATE_FILE)) return new Set();
-  try {
-    const data = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
-    return new Set(Array.isArray(data) ? data : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveSeenIds(ids: Set<string>): void {
-  mkdirSync(DATA_DIR, { recursive: true });
-  const arr = [...ids].slice(-500);
-  writeFileSync(STATE_FILE, JSON.stringify(arr, null, 2), 'utf-8');
 }
 
 // ── 執行鎖（防止排程重疊）────────────────────────────────
@@ -148,9 +131,8 @@ async function runInner(opts: RunOptions) {
     return;
   }
 
-  // 3. 去重
-  const seenIds = loadSeenIds();
-  const newPosts = allPosts.filter((p) => !seenIds.has(p.id));
+  // 3. 去重（共用 ~/.banini-tracker/seen.json）
+  const newPosts = filterNew(allPosts);
 
   if (newPosts.length === 0) {
     console.log('沒有新貼文，結束');
@@ -172,8 +154,7 @@ async function runInner(opts: RunOptions) {
   const todayCount = newPosts.filter((p) => isToday(p.timestamp)).length;
   console.log(`發現 ${newPosts.length} 篇新貼文（Threads: ${threadCount}, FB: ${fbCount}, 今日: ${todayCount}）\n`);
 
-  for (const p of newPosts) seenIds.add(p.id);
-  saveSeenIds(seenIds);
+  markPostsSeen(newPosts.map((p) => p.id));
 
   // 4. 印出貼文
   for (const p of newPosts) {

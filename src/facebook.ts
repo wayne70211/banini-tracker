@@ -47,7 +47,7 @@ export async function fetchFacebookPosts(
       .filter((t: string) => t.length > 0);
 
     return {
-      id: item.postId ?? item.id ?? '',
+      id: `fb_${item.postId ?? item.id ?? ''}`,
       source: 'facebook' as const,
       text: item.text ?? item.message ?? '',
       ocrText: ocrTexts.join('\n'),

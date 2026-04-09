@@ -86,7 +86,7 @@ export function formatReport(
   }
 
   lines.push('');
-  lines.push(analysis.summary);
+  lines.push(escapeHtml(analysis.summary));
 
   if (analysis.hasInvestmentContent) {
     if (analysis.mentionedTargets?.length) {
@@ -99,18 +99,18 @@ export function formatReport(
             : t.reverseView.includes('跌')
               ? '↓'
               : '→';
-        lines.push(`${arrow} <b>${t.name}</b>（${t.type}）`);
-        lines.push(`  她：${t.herAction} → 反指標：${t.reverseView} [${t.confidence}]`);
-        if (t.reasoning) lines.push(`  ${t.reasoning}`);
+        lines.push(`${arrow} <b>${escapeHtml(t.name)}</b>（${escapeHtml(t.type)}）`);
+        lines.push(`  她：${escapeHtml(t.herAction)} → 反指標：${escapeHtml(t.reverseView)} [${escapeHtml(t.confidence)}]`);
+        if (t.reasoning) lines.push(`  ${escapeHtml(t.reasoning)}`);
       }
     }
     if (analysis.chainAnalysis) {
       lines.push('');
-      lines.push(`<b>連鎖推導</b>\n${analysis.chainAnalysis}`);
+      lines.push(`<b>連鎖推導</b>\n${escapeHtml(analysis.chainAnalysis)}`);
     }
     if (analysis.actionableSuggestion) {
       lines.push('');
-      lines.push(`<b>建議方向</b>\n${analysis.actionableSuggestion}`);
+      lines.push(`<b>建議方向</b>\n${escapeHtml(analysis.actionableSuggestion)}`);
     }
     if (analysis.moodScore) {
       lines.push(`\n冥燈指數：${analysis.moodScore}/10`);
