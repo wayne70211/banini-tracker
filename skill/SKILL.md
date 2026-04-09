@@ -1,3 +1,11 @@
+---
+name: banini-tracker
+description: |
+  巴逆逆反指標分析。觸發時機：使用者要求追蹤巴逆逆、分析反指標、抓取社群貼文並推送 Telegram 時。
+  能力範圍：透過 CLI 抓取 Threads/Facebook 貼文、反指標邏輯分析、連鎖效應推導、Telegram 推送。
+  目標：由 Claude 作為分析引擎，產出直白中文的反指標分析報告。
+---
+
 # banini-tracker — 巴逆逆反指標分析
 
 追蹤「股海冥燈」巴逆逆（8zz）的 Threads / Facebook 貼文，由你（Claude）進行反指標分析，推送結果到 Telegram。
