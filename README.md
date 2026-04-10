@@ -4,7 +4,7 @@
 
 # banini-tracker
 
-追蹤「股海冥燈」巴逆逆（8zz）的 Threads / Facebook 社群貼文，透過 Apify 抓取、AI 反指標分析、Telegram 即時推送。
+追蹤「股海冥燈」巴逆逆（8zz）的 Facebook 社群貼文，透過 Apify 抓取、AI 反指標分析、Telegram 即時推送。
 
 - 辨識她提到的標的（個股、ETF、原物料）
 - 判斷她的操作（買入 / 被套 / 停損）
@@ -35,14 +35,14 @@ npm install && npm run start
 ### 排程規則
 
 - **盤中**（週一~五 09:00-13:30）：每 30 分鐘，FB only 抓 1 篇
-- **盤後**（每天 23:00）：Threads + FB 各 3 篇
+- **盤後**（每天 23:00）：FB 3 篇
 
 ### npm scripts
 
 | 指令 | 說明 |
 |------|------|
 | `npm run start` | 常駐排程模式（盤中 + 盤後自動跑） |
-| `npm run dev` | 單次執行（Threads + FB 各 3 篇） |
+| `npm run dev` | 單次執行（FB 3 篇） |
 | `npm run dry` | 只抓取，不呼叫 LLM |
 | `npm run market` | 盤中模式（FB only, 1 篇） |
 | `npm run evening` | 盤後模式（各 3 篇） |
@@ -91,7 +91,7 @@ npx @cablate/banini-tracker push -m "分析結果..."
 ### fetch 選項
 
 ```
--s, --source <source>  來源：threads / fb / both（預設 fb）
+-s, --source <source>  來源：fb（預設 fb）
 -n, --limit <n>        每個來源抓幾篇（預設 3）
 --no-dedup             不去重
 --mark-seen            輸出後自動標記已讀
@@ -117,12 +117,17 @@ npx @cablate/banini-tracker push -m "分析結果..."
 
 詳見 [`skill/SKILL.md`](skill/SKILL.md)。
 
-## 費用
+## 費用估算
 
-| 來源 | 每次費用 | 說明 |
-|------|---------|------|
-| Facebook | ~$0.02 | CU 計費，便宜 |
-| Threads | ~$0.15 | Pay-per-event，較貴 |
+| 項目 | 單次費用 | 頻率 | 月估算 |
+|------|---------|------|--------|
+| Facebook 抓取（Apify） | ~$0.02 | 盤中 ~198 次 + 盤後 30 次 | ~$4.56 |
+| LLM 分析（常駐模式） | 依模型而定 | 同上 | 依模型定價 |
+| Telegram 推送 | 免費 | — | $0 |
+
+> 盤中：週一~五 09:00-13:30 每 30 分鐘（~9 次/日 × 22 工作日）
+> 盤後：每天 23:00（30 次/月）
+> CLI 模式搭配 Claude Code 使用則不需 LLM 費用，Claude 自己分析
 
 ## 免責聲明
 
