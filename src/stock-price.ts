@@ -5,7 +5,7 @@
  */
 
 const FINMIND_TOKEN = process.env.FINMIND_TOKEN || '';
-const FINMIND_BASE = 'https://api.web.finmindtrade.com/api/v4/data';
+const FINMIND_BASE = 'https://api.finmindtrade.com/api/v4/data';
 const TWSE_REALTIME = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp';
 
 export interface OHLCData {
