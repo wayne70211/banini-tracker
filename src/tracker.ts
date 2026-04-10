@@ -67,7 +67,7 @@ export async function recordPredictions(
     let status = 'tracking';
 
     if (stock) {
-      basePrice = await getBasePrice(stock.code, stock.market);
+      basePrice = await getBasePrice(stock.code, stock.market, latestPost.timestamp);
     } else {
       status = 'unmappable';
       console.warn(`[tracker] 無法映射股票名稱: ${target.name}`);

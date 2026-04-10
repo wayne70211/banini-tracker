@@ -104,26 +104,31 @@ export async function getDailyOHLC(code: string, startDate: string, endDate?: st
 }
 
 /**
- * 取得基準價格（統一入口）
- * 盤中 → TWSE 即時報價
- * 盤後 → FinMind 當日收盤價
+ * 取得基準價格（以貼文時間為準）
+ * 貼文當天 + 盤中 → TWSE 即時報價
+ * 其他情況 → FinMind 貼文當日收盤價
  */
-export async function getBasePrice(code: string, market: 'tse' | 'otc'): Promise<number | null> {
-  if (isMarketOpen()) {
+export async function getBasePrice(code: string, market: 'tse' | 'otc', postTimestamp?: string): Promise<number | null> {
+  const now = new Date();
+  const postDate = postTimestamp ? new Date(postTimestamp) : now;
+  const postDateStr = postDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
+
+  // 貼文是今天 + 現在盤中 → 即時報價（最接近發文時的價格）
+  if (postDateStr === todayStr && isMarketOpen()) {
     const price = await getRealtimePrice(code, market);
     if (price) return price;
   }
 
-  // 盤後：查 FinMind 今日收盤
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
-  const ohlc = await getDailyOHLC(code, today);
+  // 查貼文當日收盤價
+  const ohlc = await getDailyOHLC(code, postDateStr);
   if (ohlc.length > 0) return ohlc[0].close;
 
-  // fallback：查最近 5 天
-  const fiveDaysAgo = new Date();
-  fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-  const start = fiveDaysAgo.toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
-  const recent = await getDailyOHLC(code, start, today);
+  // fallback：貼文日期往前查 5 天（處理週末/假日）
+  const fallbackStart = new Date(postDate);
+  fallbackStart.setDate(fallbackStart.getDate() - 5);
+  const startStr = fallbackStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
+  const recent = await getDailyOHLC(code, startStr, postDateStr);
   if (recent.length > 0) return recent[recent.length - 1].close;
 
   return null;
