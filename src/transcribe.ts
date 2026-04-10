@@ -90,7 +90,7 @@ export class GroqTranscriber implements Transcriber {
   }
 
   private async transcribeViaDownload(videoUrl: string): Promise<TranscribeResult> {
-    console.log(`[轉錄] 下載音訊: ${videoUrl.slice(0, 60)}...`);
+    console.error(`[轉錄] 下載音訊: ${videoUrl.slice(0, 60)}...`);
     const audioFile = await downloadAudio(videoUrl);
     try {
       const result = await this.client.audio.transcriptions.create({
@@ -154,13 +154,13 @@ export async function transcribeVideoPosts<T extends TranscribablePost>(
     if (!isVideoPost(post.mediaType) || !post.mediaUrl) continue;
 
     try {
-      console.log(`[轉錄][${transcriber.name}] 處理影片: ${post.id}`);
+      console.error(`[轉錄][${transcriber.name}] 處理影片: ${post.id}`);
       const result = await transcriber.transcribe(post.mediaUrl);
       if (result.text.trim().length > 0) {
         results.set(post.id, result);
-        console.log(`[轉錄] ${post.id}: ${result.text.slice(0, 50)}...（${result.durationSec ?? '?'}s）`);
+        console.error(`[轉錄] ${post.id}: ${result.text.slice(0, 50)}...（${result.durationSec ?? '?'}s）`);
       } else {
-        console.log(`[轉錄] ${post.id}: 無可辨識內容`);
+        console.error(`[轉錄] ${post.id}: 無可辨識內容`);
       }
     } catch (err) {
       console.error(`[轉錄] ${post.id} 失敗: ${err instanceof Error ? err.message : err}`);

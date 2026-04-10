@@ -5,6 +5,8 @@ import { fetchFacebookPosts } from './facebook.js';
 import { sendTelegramMessage } from './telegram.js';
 import { filterNewPosts, markPostsSeen, listSeenIds, clearSeen } from './seen.js';
 import { readFileSync } from 'fs';
+import { createTranscriber, transcribeVideoPosts, isVideoPost } from './transcribe.js';
+import { getDb } from './db.js';
 
 const program = new Command();
 program
@@ -20,9 +22,11 @@ program
   .option('--tg-bot-token <token>', 'Telegram Bot token')
   .option('--tg-channel-id <id>', 'Telegram Channel ID')
   .option('--fb-page-url <url>', 'Facebook 粉專網址', 'https://www.facebook.com/DieWithoutBang/')
+  .option('--groq-api-key <key>', 'Groq API key（影片轉錄用）')
   .action((opts) => {
     const config = defaultConfig();
     if (opts.apifyToken) config.apifyToken = opts.apifyToken;
+    if (opts.groqApiKey) config.groqApiKey = opts.groqApiKey;
     if (opts.tgBotToken || opts.tgChannelId) {
       config.telegram = {
         botToken: opts.tgBotToken ?? '',
@@ -67,6 +71,8 @@ program
   .option('--until <date>', '只抓此時間之前的貼文')
   .option('--no-dedup', '不做去重，抓到什麼就輸出什麼')
   .option('--mark-seen', '輸出後自動標記為已讀')
+  .option('--transcribe', '自動轉錄影片（captionText 為空時走 Groq Whisper）')
+  .option('--save-db', '抓取後直接存入 SQLite')
   .action(async (opts) => {
     try {
       const config = loadConfig();
@@ -83,6 +89,54 @@ program
       // 去重
       if (opts.dedup !== false) {
         posts = filterNewPosts(posts);
+      }
+
+      // 影片轉錄：captionText 為空的影片走 Groq
+      if (opts.transcribe) {
+        const groqKey = config.groqApiKey || process.env.GROQ_API_KEY;
+        if (!groqKey) {
+          console.error('⚠ --transcribe 需要 Groq API key，請用 init --groq-api-key 設定或設定環境變數 GROQ_API_KEY');
+        } else {
+          const needsTranscribe = posts.filter(
+            (p: any) => isVideoPost(p.mediaType) && !p.captionText,
+          );
+          if (needsTranscribe.length > 0) {
+            console.error(`[轉錄] ${needsTranscribe.length} 篇影片需要轉錄...`);
+            if (!process.env.GROQ_API_KEY) process.env.GROQ_API_KEY = groqKey;
+            const transcriber = createTranscriber('groq');
+            const transcripts = await transcribeVideoPosts(needsTranscribe, transcriber);
+            for (const p of needsTranscribe) {
+              const result = transcripts.get(p.id);
+              if (result) (p as any).captionText = result.text;
+            }
+          }
+        }
+      }
+
+      // 存入 DB
+      if (opts.saveDb && posts.length > 0) {
+        const db = getDb();
+        const upsert = db.prepare(`
+          INSERT INTO posts (id, source, text, ocr_text, transcript_text, media_type, media_url, url, like_count, comment_count, post_timestamp, fetched_at)
+          VALUES (@id, @source, @text, @ocr_text, @transcript_text, @media_type, @media_url, @url, @like_count, @comment_count, @post_timestamp, @fetched_at)
+          ON CONFLICT(id) DO UPDATE SET
+            transcript_text = CASE WHEN excluded.transcript_text != '' THEN excluded.transcript_text ELSE posts.transcript_text END,
+            like_count = excluded.like_count,
+            comment_count = excluded.comment_count
+        `);
+        const now = new Date().toISOString();
+        db.transaction(() => {
+          for (const p of posts) {
+            upsert.run({
+              id: p.id, source: p.source, text: p.text,
+              ocr_text: (p as any).ocrText || '', transcript_text: (p as any).captionText || '',
+              media_type: (p as any).mediaType, media_url: (p as any).mediaUrl, url: p.url,
+              like_count: (p as any).likeCount, comment_count: (p as any).commentCount || 0,
+              post_timestamp: p.timestamp, fetched_at: now,
+            });
+          }
+        })();
+        console.error(`[DB] ${posts.length} 篇已存入`);
       }
 
       // 標記已讀

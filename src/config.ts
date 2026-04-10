@@ -4,6 +4,7 @@ import { homedir } from 'os';
 
 export interface Config {
   apifyToken: string;
+  groqApiKey?: string;
   telegram?: {
     botToken: string;
     channelId: string;
