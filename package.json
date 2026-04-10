@@ -1,6 +1,6 @@
 {
   "name": "@cablate/banini-tracker",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "巴逆逆反指標追蹤器 — 常駐排程 + CLI 雙模式",
   "type": "module",
   "bin": {
@@ -17,7 +17,15 @@
     "start": "node dist/index.js --cron",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["banini", "reverse-indicator", "threads", "facebook", "apify", "telegram", "claude"],
+  "keywords": [
+    "banini",
+    "reverse-indicator",
+    "threads",
+    "facebook",
+    "apify",
+    "telegram",
+    "claude"
+  ],
   "author": "cablate",
   "license": "MIT",
   "dependencies": {
