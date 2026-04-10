@@ -13,13 +13,27 @@ export interface FacebookPost {
   mediaUrl: string;
 }
 
+export interface FetchOptions {
+  since?: string;  // onlyPostsNewerThan（ISO 時間戳或相對時間如 "2 hours"）
+  until?: string;  // onlyPostsOlderThan
+}
+
 export async function fetchFacebookPosts(
   pageUrl: string,
   token: string,
   maxPosts = 3,
+  options?: FetchOptions,
 ): Promise<FacebookPost[]> {
   const actorId = 'apify~facebook-posts-scraper';
   const url = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items`;
+
+  const body: Record<string, any> = {
+    startUrls: [{ url: pageUrl }],
+    resultsLimit: maxPosts,
+    captionText: true,
+  };
+  if (options?.since) body.onlyPostsNewerThan = options.since;
+  if (options?.until) body.onlyPostsOlderThan = options.until;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -27,11 +41,7 @@ export async function fetchFacebookPosts(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      startUrls: [{ url: pageUrl }],
-      resultsLimit: maxPosts,
-      captionText: true,
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(180_000),
   });
 

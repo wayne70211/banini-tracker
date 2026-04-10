@@ -71,6 +71,8 @@ interface RunOptions {
   maxPosts: number;
   isDryRun: boolean;
   label: string;
+  since?: string;
+  until?: string;
 }
 
 async function run(opts: RunOptions) {
@@ -95,8 +97,9 @@ async function runInner(opts: RunOptions) {
 
   // 1. 抓取 Facebook（含 retry）
   try {
+    const fetchOpts = (opts.since || opts.until) ? { since: opts.since, until: opts.until } : undefined;
     const fbPosts = await withRetry(
-      () => fetchFacebookPosts(FB_PAGE_URL, apifyToken, opts.maxPosts),
+      () => fetchFacebookPosts(FB_PAGE_URL, apifyToken, opts.maxPosts, fetchOpts),
       { label: 'Facebook', maxRetries: 2, baseDelayMs: 5000 },
     );
     allPosts.push(...fbPosts.map(fromFacebook));
@@ -309,17 +312,46 @@ async function runInner(opts: RunOptions) {
   console.log(`結果已存檔: ${outFile}`);
 }
 
+/**
+ * 產生台北時間今天指定時分的 ISO 時間戳
+ * 用於 Apify onlyPostsNewerThan 參數
+ */
+function taipeiToday(hours: number, minutes = 0): string {
+  const now = new Date();
+  const taipeiStr = now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' });
+  const taipeiNow = new Date(taipeiStr);
+  taipeiNow.setHours(hours, minutes, 0, 0);
+  // 轉回 UTC：台北 = UTC+8
+  const utc = new Date(taipeiNow.getTime() - 8 * 60 * 60 * 1000);
+  return utc.toISOString();
+}
+
+function taipeiYesterday(hours: number, minutes = 0): string {
+  const now = new Date();
+  const taipeiStr = now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' });
+  const taipeiNow = new Date(taipeiStr);
+  taipeiNow.setDate(taipeiNow.getDate() - 1);
+  taipeiNow.setHours(hours, minutes, 0, 0);
+  const utc = new Date(taipeiNow.getTime() - 8 * 60 * 60 * 1000);
+  return utc.toISOString();
+}
+
 // ── 入口 ────────────────────────────────────────────────────
 if (isCronMode) {
-  // 盤中：週一到五 09:00-13:30，每 30 分鐘，FB only 抓 1 篇
-  // cron 不支援半小時結束，用 9:00-13:00 每 30 分 + 13:30 單獨一個
+  // 早晨補漏：每天 08:00，抓前一晚 22:00 之後的貼文
+  cron.schedule('0 8 * * *', () => {
+    run({ maxPosts: 3, isDryRun: false, label: '早晨', since: taipeiYesterday(22, 0) })
+      .catch((err) => console.error('[早晨] 執行失敗:', err));
+  }, { timezone: 'Asia/Taipei' });
+
+  // 盤中：週一到五 09:00-13:30，每 30 分鐘，抓 08:30 之後的貼文
   cron.schedule('7,37 9-12 * * 1-5', () => {
-    run({ maxPosts: 1, isDryRun: false, label: '盤中' })
+    run({ maxPosts: 1, isDryRun: false, label: '盤中', since: taipeiToday(8, 30) })
       .catch((err) => console.error('[盤中] 執行失敗:', err));
   }, { timezone: 'Asia/Taipei' });
 
   cron.schedule('7 13 * * 1-5', () => {
-    run({ maxPosts: 1, isDryRun: false, label: '盤中' })
+    run({ maxPosts: 1, isDryRun: false, label: '盤中', since: taipeiToday(8, 30) })
       .catch((err) => console.error('[盤中] 執行失敗:', err));
   }, { timezone: 'Asia/Taipei' });
 
@@ -329,16 +361,17 @@ if (isCronMode) {
       .catch((err) => console.error('[追蹤更新] 執行失敗:', err));
   }, { timezone: 'Asia/Taipei' });
 
-  // 盤後：每天晚上 23:00，FB 3 篇
+  // 盤後：每天晚上 23:03，抓 13:30 之後的貼文
   cron.schedule('3 23 * * *', () => {
-    run({ maxPosts: 3, isDryRun: false, label: '盤後' })
+    run({ maxPosts: 3, isDryRun: false, label: '盤後', since: taipeiToday(13, 30) })
       .catch((err) => console.error('[盤後] 執行失敗:', err));
   }, { timezone: 'Asia/Taipei' });
 
   console.log('=== 巴逆逆排程已啟動 ===');
-  console.log('  盤中：週一~五 09:07/09:37/10:07/.../13:07（FB, 1 篇）');
+  console.log('  早晨：每天 08:00（前晚 22:00 起，3 篇）');
+  console.log('  盤中：週一~五 09:07/09:37/10:07/.../13:07（08:30 起，1 篇）');
   console.log('  追蹤更新：週一~五 15:00（預測追蹤判定）');
-  console.log('  盤後：每天 23:03（FB, 3 篇）');
+  console.log('  盤後：每天 23:03（13:30 起，3 篇）');
   console.log('  按 Ctrl+C 停止\n');
 
 } else {

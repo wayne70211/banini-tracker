@@ -63,6 +63,8 @@ program
   .description('抓取最新貼文（輸出 JSON 到 stdout）')
   .option('-s, --source <source>', '來源：fb', 'fb')
   .option('-n, --limit <n>', '每個來源抓幾篇', '3')
+  .option('--since <date>', '只抓此時間之後的貼文（YYYY-MM-DD 或 ISO 時間戳或相對時間如 "2 months"）')
+  .option('--until <date>', '只抓此時間之前的貼文')
   .option('--no-dedup', '不做去重，抓到什麼就輸出什麼')
   .option('--mark-seen', '輸出後自動標記為已讀')
   .action(async (opts) => {
@@ -71,7 +73,8 @@ program
       const limit = parseInt(opts.limit, 10);
       let posts: any[] = [];
 
-      const fp = await fetchFacebookPosts(config.targets.facebookPageUrl, config.apifyToken, limit);
+      const fetchOpts = (opts.since || opts.until) ? { since: opts.since, until: opts.until } : undefined;
+      const fp = await fetchFacebookPosts(config.targets.facebookPageUrl, config.apifyToken, limit, fetchOpts);
       posts.push(...fp);
 
       // 按時間從新到舊
