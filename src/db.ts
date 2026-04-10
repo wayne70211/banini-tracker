@@ -37,22 +37,23 @@ function migrate(db: Database.Database): void {
       created_at TEXT NOT NULL,
       recorded_at TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'tracking',
-      realized_at TEXT,
-      days_to_realize INTEGER,
-      peak_change_pct REAL,
+      completed_at TEXT,
+      next_prediction_id INTEGER REFERENCES predictions(id),
       UNIQUE(post_id, symbol_name)
     );
 
     CREATE TABLE IF NOT EXISTS price_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       prediction_id INTEGER NOT NULL REFERENCES predictions(id),
+      day_number INTEGER NOT NULL,
       date TEXT NOT NULL,
       open_price REAL NOT NULL,
       high_price REAL NOT NULL,
       low_price REAL NOT NULL,
       close_price REAL NOT NULL,
       change_pct_close REAL NOT NULL,
-      change_pct_extreme REAL NOT NULL,
+      change_pct_high REAL NOT NULL,
+      change_pct_low REAL NOT NULL,
       UNIQUE(prediction_id, date)
     );
   `);

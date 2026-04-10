@@ -1,7 +1,10 @@
 /**
  * 預測追蹤主邏輯
  * - recordPredictions：LLM 分析後記錄預測
- * - updateTracking：每日更新追蹤中的預測
+ * - updateTracking：每日更新追蹤中的預測（15:00 排程）
+ *
+ * 設計原則：資料記錄與勝敗判定分離
+ * 系統只負責忠實記錄 5 個交易日的 OHLC，勝敗在查詢時決定。
  */
 import { getDb } from './db.js';
 import { resolveStock } from './stock-map.js';
@@ -16,6 +19,7 @@ interface PostInfo {
 
 /**
  * 記錄 LLM 分析出的預測
+ * 同股票有 tracking 中的舊預測 → supersede 舊的
  */
 export async function recordPredictions(
   analysis: BaniniAnalysis,
@@ -37,13 +41,23 @@ export async function recordPredictions(
        @base_price, @created_at, @recorded_at, @status)
   `);
 
-  // 用最新的貼文作為來源
+  const findTracking = db.prepare(`
+    SELECT id FROM predictions
+    WHERE symbol_code = ? AND status = 'tracking'
+    ORDER BY id DESC LIMIT 1
+  `);
+
+  const supersede = db.prepare(`
+    UPDATE predictions
+    SET status = 'superseded', next_prediction_id = ?
+    WHERE id = ?
+  `);
+
   const latestPost = posts[0];
   const now = new Date().toISOString();
   let recorded = 0;
 
   for (const target of analysis.mentionedTargets) {
-    // 只追蹤個股和 ETF（有代碼才能查價）
     if (target.type !== '個股' && target.type !== 'ETF') {
       continue;
     }
@@ -76,6 +90,17 @@ export async function recordPredictions(
     });
 
     if (result.changes > 0) {
+      const newId = result.lastInsertRowid as number;
+
+      // 同股票有追蹤中的舊預測 → supersede
+      if (stock && status === 'tracking') {
+        const existing = findTracking.get(stock.code) as { id: number } | undefined;
+        if (existing && existing.id !== newId) {
+          supersede.run(newId, existing.id);
+          console.log(`[tracker] 覆蓋舊預測 #${existing.id} → #${newId}（${target.name}）`);
+        }
+      }
+
       recorded++;
       const priceStr = basePrice ? `$${basePrice}` : '無報價';
       console.log(`[tracker] 記錄預測: ${target.name}（${stock?.code ?? '?'}）${target.reverseView} [${priceStr}]`);
@@ -90,18 +115,17 @@ interface TrackingPrediction {
   symbol_code: string;
   symbol_name: string;
   base_price: number;
-  reverse_view: string;
-  peak_change_pct: number | null;
 }
 
 /**
  * 每日更新追蹤中的預測（建議 15:00 後執行）
+ * 一律追蹤 5 個交易日，不提前終止。
  */
 export async function updateTracking(): Promise<void> {
   const db = getDb();
 
   const predictions = db.prepare(`
-    SELECT id, symbol_code, symbol_name, base_price, reverse_view, peak_change_pct
+    SELECT id, symbol_code, symbol_name, base_price
     FROM predictions
     WHERE status = 'tracking' AND symbol_code IS NOT NULL AND base_price IS NOT NULL
   `).all() as TrackingPrediction[];
@@ -126,23 +150,20 @@ export async function updateTracking(): Promise<void> {
     }
   }
 
-  const insertSnapshot = db.prepare(`
-    INSERT OR IGNORE INTO price_snapshots
-      (prediction_id, date, open_price, high_price, low_price, close_price,
-       change_pct_close, change_pct_extreme)
-    VALUES (@prediction_id, @date, @open_price, @high_price, @low_price, @close_price,
-            @change_pct_close, @change_pct_extreme)
-  `);
-
-  const updatePrediction = db.prepare(`
-    UPDATE predictions
-    SET status = @status, realized_at = @realized_at,
-        days_to_realize = @days_to_realize, peak_change_pct = @peak_change_pct
-    WHERE id = @id
-  `);
-
   const countSnapshots = db.prepare(`
     SELECT COUNT(*) as cnt FROM price_snapshots WHERE prediction_id = ?
+  `);
+
+  const insertSnapshot = db.prepare(`
+    INSERT OR IGNORE INTO price_snapshots
+      (prediction_id, day_number, date, open_price, high_price, low_price, close_price,
+       change_pct_close, change_pct_high, change_pct_low)
+    VALUES (@prediction_id, @day_number, @date, @open_price, @high_price, @low_price, @close_price,
+            @change_pct_close, @change_pct_high, @change_pct_low)
+  `);
+
+  const markCompleted = db.prepare(`
+    UPDATE predictions SET status = 'completed', completed_at = ? WHERE id = ?
   `);
 
   const updateInTransaction = db.transaction(() => {
@@ -150,61 +171,35 @@ export async function updateTracking(): Promise<void> {
       const ohlc = ohlcMap.get(pred.symbol_code);
       if (!ohlc) continue;
 
-      const isDownward = pred.reverse_view.includes('跌');
+      // day_number = 已有的 snapshot 數 + 1
+      const currentCount = (countSnapshots.get(pred.id) as any).cnt as number;
+      const dayNumber = currentCount + 1;
 
-      // 計算漲跌幅
+      // 計算漲跌幅（兩個方向都記錄）
       const changePctClose = ((ohlc.close - pred.base_price) / pred.base_price) * 100;
-      const extreme = isDownward ? ohlc.low : ohlc.high;
-      const changePctExtreme = ((extreme - pred.base_price) / pred.base_price) * 100;
+      const changePctHigh = ((ohlc.high - pred.base_price) / pred.base_price) * 100;
+      const changePctLow = ((ohlc.low - pred.base_price) / pred.base_price) * 100;
 
-      // 寫入快照
       insertSnapshot.run({
         prediction_id: pred.id,
+        day_number: dayNumber,
         date: today,
         open_price: ohlc.open,
         high_price: ohlc.high,
         low_price: ohlc.low,
         close_price: ohlc.close,
         change_pct_close: Math.round(changePctClose * 100) / 100,
-        change_pct_extreme: Math.round(changePctExtreme * 100) / 100,
+        change_pct_high: Math.round(changePctHigh * 100) / 100,
+        change_pct_low: Math.round(changePctLow * 100) / 100,
       });
 
-      // 更新 peak_change_pct
-      const currentPeak = pred.peak_change_pct ?? 0;
-      const absCurrent = Math.abs(changePctExtreme);
-      const absPeak = Math.abs(currentPeak);
-      const newPeak = absCurrent > absPeak ? changePctExtreme : currentPeak;
-
-      // 判定狀態
-      const snapshotCount = (countSnapshots.get(pred.id) as any).cnt;
-      const status = checkRealized(pred.reverse_view, changePctExtreme, snapshotCount);
-
-      if (status === 'realized') {
-        updatePrediction.run({
-          id: pred.id,
-          status: 'realized',
-          realized_at: today,
-          days_to_realize: snapshotCount,
-          peak_change_pct: Math.round(newPeak * 100) / 100,
-        });
-        console.log(`[tracker] 實現: ${pred.symbol_name}（${pred.symbol_code}）${changePctExtreme.toFixed(2)}%`);
-      } else if (status === 'expired') {
-        updatePrediction.run({
-          id: pred.id,
-          status: 'expired',
-          realized_at: null,
-          days_to_realize: null,
-          peak_change_pct: Math.round(newPeak * 100) / 100,
-        });
-        console.log(`[tracker] 過期: ${pred.symbol_name}（${pred.symbol_code}）peak ${newPeak.toFixed(2)}%`);
+      // 5 個交易日 → completed
+      if (dayNumber >= 5) {
+        markCompleted.run(today, pred.id);
+        console.log(`[tracker] 完成追蹤: ${pred.symbol_name}（${pred.symbol_code}）5 天結束`);
       } else {
-        updatePrediction.run({
-          id: pred.id,
-          status: 'tracking',
-          realized_at: null,
-          days_to_realize: null,
-          peak_change_pct: Math.round(newPeak * 100) / 100,
-        });
+        const pctStr = changePctClose >= 0 ? `+${changePctClose.toFixed(2)}` : changePctClose.toFixed(2);
+        console.log(`[tracker] ${pred.symbol_name}（${pred.symbol_code}）day ${dayNumber}: ${pctStr}%`);
       }
     }
   });
@@ -214,48 +209,24 @@ export async function updateTracking(): Promise<void> {
 }
 
 /**
- * 判定是否實現
- * - 看跌 → extreme change ≤ -3%
- * - 看漲 → extreme change ≥ 3%
- * - 超過 5 個交易日 → expired
+ * 取得追蹤統計（基本概覽）
  */
-function checkRealized(
-  reverseView: string,
-  changePctExtreme: number,
-  snapshotCount: number,
-): 'realized' | 'expired' | 'tracking' {
-  const isDownward = reverseView.includes('跌');
-
-  if (isDownward && changePctExtreme <= -3) return 'realized';
-  if (!isDownward && changePctExtreme >= 3) return 'realized';
-  if (snapshotCount >= 5) return 'expired';
-
-  return 'tracking';
-}
-
-/**
- * 取得追蹤統計
- */
-export function getStats(): { total: number; realized: number; expired: number; tracking: number; winRate: number } {
+export function getStats(): { total: number; completed: number; tracking: number; superseded: number } {
   const db = getDb();
   const stats = db.prepare(`
     SELECT
       COUNT(*) as total,
-      SUM(CASE WHEN status = 'realized' THEN 1 ELSE 0 END) as realized,
-      SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) as expired,
-      SUM(CASE WHEN status = 'tracking' THEN 1 ELSE 0 END) as tracking
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'tracking' THEN 1 ELSE 0 END) as tracking,
+      SUM(CASE WHEN status = 'superseded' THEN 1 ELSE 0 END) as superseded
     FROM predictions
     WHERE status != 'unmappable'
   `).get() as any;
 
-  const decided = stats.realized + stats.expired;
-  const winRate = decided > 0 ? Math.round((stats.realized / decided) * 100) : 0;
-
   return {
     total: stats.total,
-    realized: stats.realized,
-    expired: stats.expired,
+    completed: stats.completed,
     tracking: stats.tracking,
-    winRate,
+    superseded: stats.superseded,
   };
 }
