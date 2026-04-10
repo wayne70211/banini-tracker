@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: "!contains(github.event.head_commit.message, 'chore: release')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+      - name: Bump version
+        run: |
+          NPM_VERSION=$(npm view @cablate/banini-tracker version 2>/dev/null || echo "0.0.0")
+          LOCAL_VERSION=$(node -p "require('./package.json').version")
+          HIGHER=$(printf '%s\n' "$NPM_VERSION" "$LOCAL_VERSION" | sort -V | tail -1)
+          node -e "
+            const pkg = require('./package.json');
+            pkg.version = '${HIGHER}';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          npm version patch --no-git-tag-version
+
+      - name: Build
+        run: npx tsc
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit version bump & tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: release v${VERSION}"
+          git tag "v${VERSION}"
+          git push
+          git push --tags
+
+      - name: Create GitHub Release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(git log ${PREV_TAG}..v${VERSION} --pretty=format:"- %s" --no-merges | grep -v "^- chore: release")
+          else
+            NOTES="Initial release"
+          fi
+          gh release create "v${VERSION}" --title "v${VERSION}" --notes "$NOTES"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

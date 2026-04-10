@@ -8,19 +8,20 @@
  *   npm run cron             # 常駐排程：盤中每 30 分 + 盤後 23:00
  */
 import 'dotenv/config';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import cron from 'node-cron';
 import { fetchThreadsPosts, type ThreadsPost } from './threads.js';
 import { fetchFacebookPosts, type FacebookPost } from './facebook.js';
 import { analyzePosts } from './analyze.js';
-import { sendTelegramMessage, formatReport } from './telegram.js';
+import { sendTelegramMessageWithConfig, formatReport, formatFallbackReport } from './telegram.js';
+import { filterNewPosts as filterNew, markPostsSeen } from './seen.js';
+import { withRetry } from './retry.js';
 
 // ── Config ──────────────────────────────────────────────────
 const THREADS_USERNAME = 'banini31';
 const FB_PAGE_URL = 'https://www.facebook.com/DieWithoutBang/';
 const DATA_DIR = join(process.cwd(), 'data');
-const STATE_FILE = join(DATA_DIR, 'seen.json');
 
 const isCronMode = process.argv.includes('--cron');
 
@@ -55,13 +56,13 @@ function fromThreads(p: ThreadsPost): UnifiedPost {
     url: p.url,
     mediaType: p.mediaType,
     mediaUrl: p.mediaUrl,
-    ocrText: '',
+    ocrText: p.ocrText,
   };
 }
 
 function fromFacebook(p: FacebookPost): UnifiedPost {
   return {
-    id: `fb_${p.id}`,
+    id: p.id,
     source: 'facebook',
     text: p.text,
     ocrText: p.ocrText,
@@ -72,23 +73,6 @@ function fromFacebook(p: FacebookPost): UnifiedPost {
     mediaType: p.mediaType,
     mediaUrl: p.mediaUrl,
   };
-}
-
-// ── 去重 ────────────────────────────────────────────────────
-function loadSeenIds(): Set<string> {
-  if (!existsSync(STATE_FILE)) return new Set();
-  try {
-    const data = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
-    return new Set(Array.isArray(data) ? data : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveSeenIds(ids: Set<string>): void {
-  mkdirSync(DATA_DIR, { recursive: true });
-  const arr = [...ids].slice(-500);
-  writeFileSync(STATE_FILE, JSON.stringify(arr, null, 2), 'utf-8');
 }
 
 // ── 執行鎖（防止排程重疊）────────────────────────────────
@@ -123,20 +107,26 @@ async function runInner(opts: RunOptions) {
   const apifyToken = env('APIFY_TOKEN');
   const allPosts: UnifiedPost[] = [];
 
-  // 1. 抓取 Threads
+  // 1. 抓取 Threads（含 retry）
   if (!opts.fbOnly) {
     try {
-      const threadsPosts = await fetchThreadsPosts(THREADS_USERNAME, apifyToken, opts.maxPosts);
+      const threadsPosts = await withRetry(
+        () => fetchThreadsPosts(THREADS_USERNAME, apifyToken, opts.maxPosts),
+        { label: 'Threads', maxRetries: 2, baseDelayMs: 5000 },
+      );
       allPosts.push(...threadsPosts.map(fromThreads));
     } catch (err) {
       console.error(`[Threads] 抓取失敗: ${err instanceof Error ? err.message : err}`);
     }
   }
 
-  // 2. 抓取 Facebook
+  // 2. 抓取 Facebook（含 retry）
   if (!opts.threadsOnly) {
     try {
-      const fbPosts = await fetchFacebookPosts(FB_PAGE_URL, apifyToken, opts.maxPosts);
+      const fbPosts = await withRetry(
+        () => fetchFacebookPosts(FB_PAGE_URL, apifyToken, opts.maxPosts),
+        { label: 'Facebook', maxRetries: 2, baseDelayMs: 5000 },
+      );
       allPosts.push(...fbPosts.map(fromFacebook));
     } catch (err) {
       console.error(`[Facebook] 抓取失敗: ${err instanceof Error ? err.message : err}`);
@@ -148,9 +138,8 @@ async function runInner(opts: RunOptions) {
     return;
   }
 
-  // 3. 去重
-  const seenIds = loadSeenIds();
-  const newPosts = allPosts.filter((p) => !seenIds.has(p.id));
+  // 3. 去重（共用 ~/.banini-tracker/seen.json）
+  const newPosts = filterNew(allPosts);
 
   if (newPosts.length === 0) {
     console.log('沒有新貼文，結束');
@@ -172,8 +161,7 @@ async function runInner(opts: RunOptions) {
   const todayCount = newPosts.filter((p) => isToday(p.timestamp)).length;
   console.log(`發現 ${newPosts.length} 篇新貼文（Threads: ${threadCount}, FB: ${fbCount}, 今日: ${todayCount}）\n`);
 
-  for (const p of newPosts) seenIds.add(p.id);
-  saveSeenIds(seenIds);
+  markPostsSeen(newPosts.map((p) => p.id));
 
   // 4. 印出貼文
   for (const p of newPosts) {
@@ -207,11 +195,22 @@ async function runInner(opts: RunOptions) {
     return;
   }
 
-  const analysis = await analyzePosts(textsForAnalysis, {
-    baseUrl: env('LLM_BASE_URL', 'https://api.deepinfra.com/v1/openai'),
-    apiKey: env('LLM_API_KEY'),
-    model: env('LLM_MODEL', 'MiniMaxAI/MiniMax-M2.5'),
-  });
+  let analysis: Awaited<ReturnType<typeof analyzePosts>>;
+  let llmFailed = false;
+  try {
+    analysis = await withRetry(
+      () => analyzePosts(textsForAnalysis, {
+        baseUrl: env('LLM_BASE_URL', 'https://api.deepinfra.com/v1/openai'),
+        apiKey: env('LLM_API_KEY'),
+        model: env('LLM_MODEL', 'MiniMaxAI/MiniMax-M2.5'),
+      }),
+      { label: 'LLM', maxRetries: 3, baseDelayMs: 5000 },
+    );
+  } catch (err) {
+    console.error(`[LLM] 分析失敗，將推送純貼文摘要: ${err instanceof Error ? err.message : err}`);
+    llmFailed = true;
+    analysis = { hasInvestmentContent: false, summary: '（LLM 分析失敗，以下為原始貼文）' };
+  }
 
   // 6. 輸出結果
   console.log('========================================');
@@ -249,12 +248,18 @@ async function runInner(opts: RunOptions) {
         timestamp: new Date(p.timestamp).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
         isToday: isToday(p.timestamp),
         text: p.text.slice(0, 60),
+        url: p.url,
       }));
-      const msg = formatReport(analysis, { threads: threadCount, fb: fbCount }, postSummaries);
-      await sendTelegramMessage({ botToken: tgToken, channelId: tgChannelId }, msg);
+      const msg = llmFailed
+        ? formatFallbackReport(postSummaries)
+        : formatReport(analysis, { threads: threadCount, fb: fbCount }, postSummaries);
+      await withRetry(
+        () => sendTelegramMessageWithConfig({ botToken: tgToken, channelId: tgChannelId }, msg),
+        { label: 'Telegram', maxRetries: 3, baseDelayMs: 3000 },
+      );
       console.log('[Telegram] 通知已發送');
     } catch (err) {
-      console.error(`[Telegram] 發送失敗: ${err instanceof Error ? err.message : err}`);
+      console.error(`[Telegram] 發送失敗（已重試 3 次）: ${err instanceof Error ? err.message : err}`);
     }
   } else {
     console.log('[Telegram] 未設定 TG_BOT_TOKEN / TG_CHANNEL_ID，跳過通知');

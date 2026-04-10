@@ -4,102 +4,130 @@
 
 # banini-tracker
 
-追蹤「反指標女神」巴逆逆（8zz）的 Threads / Facebook 貼文，用 AI 進行反指標分析，推送結果到 Telegram 頻道。
-
-## 它做什麼
-
-1. 透過 Apify 抓取巴逆逆的最新社群貼文（Threads + Facebook）
-2. 自動去重，只處理新貼文
-3. 用 LLM 進行「反指標 + 總經連鎖」分析
-4. 將分析結果推送到 Telegram 頻道
-5. 內建排程：盤中即時追蹤 + 盤後完整分析
-
-## 反指標邏輯
-
-巴逆逆被稱為「股海冥燈」——買什麼跌什麼，賣什麼漲什麼。AI 分析會：
+追蹤「股海冥燈」巴逆逆（8zz）的 Threads / Facebook 社群貼文，透過 Apify 抓取、AI 反指標分析、Telegram 即時推送。
 
 - 辨識她提到的標的（個股、ETF、原物料）
 - 判斷她的操作（買入 / 被套 / 停損）
 - 反轉推導（她停損 → 可能反彈、她買入 → 可能下跌）
 - 推導連鎖效應（油價跌 → 製造業利多 → 電子股受惠）
 
-## 環境需求
+> **Claude Code 使用者？** 直接把 [`skill/SKILL.md`](skill/SKILL.md) 加到你的 `.claude/skills/` 就能用。Claude 自己當分析引擎，不需要額外 LLM。
 
-- Node.js 20+
-- [Apify](https://apify.com/) 帳號（免費額度即可）
-- 任何 OpenAI 相容的 LLM API（預設 DeepInfra）
-- Telegram Bot + 頻道（選用）
+支援兩種使用模式：
+- **常駐排程**：Docker 部署，自動盤中/盤後排程 + LLM 分析 + Telegram 推送
+- **CLI 工具**：`npx @cablate/banini-tracker`，搭配 Claude Code 等 AI 手動執行分析
 
-## 安裝
+## 快速開始（常駐排程）
 
 ```bash
-git clone https://github.com/CabLate/banini-tracker.git
-cd banini-tracker
-npm install
+# 1. 複製設定
 cp .env.example .env
+# 填入 APIFY_TOKEN, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, TG_BOT_TOKEN, TG_CHANNEL_ID
+
+# 2. Docker 部署
+docker build -t banini-tracker .
+docker run -d --name banini --env-file .env banini-tracker
+
+# 3. 或本地直接跑
+npm install && npm run start
 ```
 
-編輯 `.env` 填入你的 API keys：
+### 排程規則
 
-```env
-APIFY_TOKEN=your_apify_token
+- **盤中**（週一~五 09:00-13:30）：每 30 分鐘，FB only 抓 1 篇
+- **盤後**（每天 23:00）：Threads + FB 各 3 篇
+
+### npm scripts
+
+| 指令 | 說明 |
+|------|------|
+| `npm run start` | 常駐排程模式（盤中 + 盤後自動跑） |
+| `npm run dev` | 單次執行（Threads + FB 各 3 篇） |
+| `npm run dry` | 只抓取，不呼叫 LLM |
+| `npm run market` | 盤中模式（FB only, 1 篇） |
+| `npm run evening` | 盤後模式（各 3 篇） |
+
+### .env 設定
+
+```
+APIFY_TOKEN=apify_api_...
 LLM_BASE_URL=https://api.deepinfra.com/v1/openai
-LLM_API_KEY=your_api_key
+LLM_API_KEY=...
 LLM_MODEL=MiniMaxAI/MiniMax-M2.5
-TG_BOT_TOKEN=your_telegram_bot_token
-TG_CHANNEL_ID=your_telegram_channel_id
+TG_BOT_TOKEN=...
+TG_CHANNEL_ID=-100...
 ```
 
-## 使用
+## CLI 工具模式
 
-### 手動執行
+不需 clone repo，任何環境直接用：
 
 ```bash
-npm run dev              # Threads + FB 各 3 篇，AI 分析 + 通知
-npm run dry              # 只抓取，不呼叫 LLM（測試用）
-npm run market           # 盤中模式：FB only, 1 篇
-npm run evening          # 盤後模式：Threads + FB, 各 3 篇
+# 初始化設定
+npx @cablate/banini-tracker init \
+  --apify-token YOUR_APIFY_TOKEN \
+  --tg-bot-token YOUR_TG_BOT_TOKEN \
+  --tg-channel-id YOUR_TG_CHANNEL_ID
+
+# 抓取 Facebook 最新 3 篇
+npx @cablate/banini-tracker fetch -s fb -n 3 --mark-seen
+
+# 推送結果到 Telegram
+npx @cablate/banini-tracker push -m "分析結果..."
 ```
 
-### 常駐排程（部署用）
+### CLI 指令
 
-```bash
-npm run build            # TypeScript 編譯
-npm run start            # 啟動常駐排程
-```
+| 指令 | 說明 |
+|------|------|
+| `init` | 初始化設定檔（`~/.banini-tracker.json`） |
+| `config` | 顯示目前設定 |
+| `fetch` | 抓取貼文，輸出 JSON 到 stdout |
+| `push` | 推送訊息到 Telegram |
+| `seen list` | 列出已讀貼文 ID |
+| `seen mark <id...>` | 標記貼文為已讀 |
+| `seen clear` | 清空已讀紀錄 |
 
-排程時間（台北時間）：
-
-| 排程 | 時間 | 來源 | 篇數 |
-|------|------|------|------|
-| 盤中 | 週一~五 09:07-13:07 每 30 分 | Facebook | 1 篇 |
-| 盤後 | 每天 23:03 | Threads + Facebook | 各 3 篇 |
-
-盤中只用 Facebook（$0.02/次），盤後加 Threads（~$0.15/次），日成本約 $0.37。
-
-## 費用估算
-
-| 服務 | 單次費用 | 月估算 |
-|------|---------|--------|
-| Apify FB Scraper | $0.02/次 | ~$6（盤中 10 次/天 × 30 天） |
-| Apify Threads Scraper | ~$0.15/次 | ~$4.5（盤後 1 次/天 × 30 天） |
-| DeepInfra LLM | ~$0.001/次 | < $1 |
-| **合計** | | **~$11/月** |
-
-## 專案結構
+### fetch 選項
 
 ```
-src/
-  index.ts       # 主程式 + 排程邏輯
-  threads.ts     # Apify Threads Scraper 封裝
-  facebook.ts    # Apify Facebook Scraper 封裝
-  analyze.ts     # LLM 反指標分析（prompt + 呼叫）
-  telegram.ts    # Telegram Bot 通知
-data/            # 執行資料（gitignore）
-  seen.json      # 已處理貼文 ID（去重用）
-  report-*.json  # 每次分析結果存檔
+-s, --source <source>  來源：threads / fb / both（預設 fb）
+-n, --limit <n>        每個來源抓幾篇（預設 3）
+--no-dedup             不去重
+--mark-seen            輸出後自動標記已讀
 ```
+
+### push 選項
+
+```
+-m, --message <text>     直接帶訊息
+-f, --file <path>        從檔案讀取
+--parse-mode <mode>      HTML / Markdown / none（預設 HTML）
+```
+
+不帶 `-m` 或 `-f` 時從 stdin 讀取。
+
+### 搭配 Claude Code 使用
+
+在 Claude Code 的 skill 中，Claude 自己就是分析引擎：
+
+1. `fetch` 抓貼文 → Claude 讀 JSON
+2. Claude 分析 + WebSearch 查最新走勢
+3. Claude 組報告 → `push` 推送 Telegram
+
+詳見 [`skill/SKILL.md`](skill/SKILL.md)。
+
+## 費用
+
+| 來源 | 每次費用 | 說明 |
+|------|---------|------|
+| Facebook | ~$0.02 | CU 計費，便宜 |
+| Threads | ~$0.15 | Pay-per-event，較貴 |
 
 ## 免責聲明
 
 本專案僅供娛樂參考，不構成任何投資建議。
+
+## License
+
+MIT

@@ -1,40 +1,49 @@
-/**
- * Telegram 通知模組
- * 使用 Bot API 直接發送，不需額外套件
- */
-
 const API_BASE = 'https://api.telegram.org/bot';
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// ── CLI 用（直接傳參數）────────────────────────────────
+export async function sendTelegramMessage(
+  botToken: string,
+  channelId: string,
+  text: string,
+  parseMode: 'HTML' | 'Markdown' | '' = 'HTML',
+): Promise<void> {
+  const url = `${API_BASE}${botToken}/sendMessage`;
+
+  const body: Record<string, any> = {
+    chat_id: channelId,
+    text,
+    disable_web_page_preview: true,
+  };
+  if (parseMode) body.parse_mode = parseMode;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const respBody = await res.text().catch(() => '');
+    throw new Error(`Telegram 發送失敗: ${res.status} ${respBody.slice(0, 200)}`);
+  }
 }
+
+// ── 常駐模式用（物件參數 + formatReport）────────────────
 
 export interface TelegramConfig {
   botToken: string;
   channelId: string;
 }
 
-export async function sendTelegramMessage(
+export async function sendTelegramMessageWithConfig(
   config: TelegramConfig,
   text: string,
 ): Promise<void> {
-  const url = `${API_BASE}${config.botToken}/sendMessage`;
+  return sendTelegramMessage(config.botToken, config.channelId, text);
+}
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: config.channelId,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Telegram 發送失敗: ${res.status} ${body.slice(0, 200)}`);
-  }
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 interface PostSummary {
@@ -42,6 +51,7 @@ interface PostSummary {
   timestamp: string;
   isToday: boolean;
   text: string;
+  url: string;
 }
 
 export function formatReport(
@@ -68,17 +78,17 @@ export function formatReport(
   lines.push(`來源：Threads ${postCount.threads} 篇 / FB ${postCount.fb} 篇`);
   lines.push('');
 
-  // 貼文時間軸
   lines.push('<b>她的動態</b>');
   for (const p of posts) {
     const src = p.source === 'threads' ? 'TH' : 'FB';
     const todayTag = p.isToday ? ' [今天]' : '';
     const preview = escapeHtml(p.text.replace(/\n/g, ' ').slice(0, 50));
-    lines.push(`${src}${todayTag} ${p.timestamp}｜${preview}${p.text.length > 50 ? '…' : ''}`);
+    const link = p.url ? ` <a href="${p.url}">原文</a>` : '';
+    lines.push(`${src}${todayTag} ${p.timestamp}｜${preview}${p.text.length > 50 ? '…' : ''}${link}`);
   }
 
   lines.push('');
-  lines.push(analysis.summary);
+  lines.push(escapeHtml(analysis.summary));
 
   if (analysis.hasInvestmentContent) {
     if (analysis.mentionedTargets?.length) {
@@ -91,18 +101,18 @@ export function formatReport(
             : t.reverseView.includes('跌')
               ? '↓'
               : '→';
-        lines.push(`${arrow} <b>${t.name}</b>（${t.type}）`);
-        lines.push(`  她：${t.herAction} → 反指標：${t.reverseView} [${t.confidence}]`);
-        if (t.reasoning) lines.push(`  ${t.reasoning}`);
+        lines.push(`${arrow} <b>${escapeHtml(t.name)}</b>（${escapeHtml(t.type)}）`);
+        lines.push(`  她：${escapeHtml(t.herAction)} → 反指標：${escapeHtml(t.reverseView)} [${escapeHtml(t.confidence)}]`);
+        if (t.reasoning) lines.push(`  ${escapeHtml(t.reasoning)}`);
       }
     }
     if (analysis.chainAnalysis) {
       lines.push('');
-      lines.push(`<b>連鎖推導</b>\n${analysis.chainAnalysis}`);
+      lines.push(`<b>連鎖推導</b>\n${escapeHtml(analysis.chainAnalysis)}`);
     }
     if (analysis.actionableSuggestion) {
       lines.push('');
-      lines.push(`<b>建議方向</b>\n${analysis.actionableSuggestion}`);
+      lines.push(`<b>建議方向</b>\n${escapeHtml(analysis.actionableSuggestion)}`);
     }
     if (analysis.moodScore) {
       lines.push(`\n冥燈指數：${analysis.moodScore}/10`);
@@ -112,5 +122,20 @@ export function formatReport(
   }
 
   lines.push('\n<i>僅供娛樂參考，不構成投資建議</i>');
+  return lines.join('\n');
+}
+
+export function formatFallbackReport(posts: PostSummary[]): string {
+  const lines: string[] = [];
+  lines.push('<b>巴逆逆貼文速報</b>（LLM 分析失敗）');
+  lines.push('');
+  for (const p of posts) {
+    const src = p.source === 'threads' ? 'TH' : 'FB';
+    const todayTag = p.isToday ? ' [今天]' : '';
+    const preview = escapeHtml(p.text.replace(/\n/g, ' ').slice(0, 80));
+    const link = p.url ? ` <a href="${p.url}">原文</a>` : '';
+    lines.push(`${src}${todayTag} ${p.timestamp}｜${preview}${p.text.length > 80 ? '…' : ''}${link}`);
+  }
+  lines.push('\n<i>LLM 服務暫時無法使用，僅列出原始貼文</i>');
   return lines.join('\n');
 }
