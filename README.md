@@ -6,6 +6,11 @@
 
 追蹤「股海冥燈」巴逆逆（8zz）的 Threads / Facebook 社群貼文，透過 Apify 抓取、AI 反指標分析、Telegram 即時推送。
 
+- 辨識她提到的標的（個股、ETF、原物料）
+- 判斷她的操作（買入 / 被套 / 停損）
+- 反轉推導（她停損 → 可能反彈、她買入 → 可能下跌）
+- 推導連鎖效應（油價跌 → 製造業利多 → 電子股受惠）
+
 > **Claude Code 使用者？** 直接把 [`skill/SKILL.md`](skill/SKILL.md) 加到你的 `.claude/skills/` 就能用。Claude 自己當分析引擎，不需要額外 LLM。
 
 支援兩種使用模式：
