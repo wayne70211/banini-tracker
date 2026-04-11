@@ -93,6 +93,16 @@ async function runInner(opts: RunOptions) {
   console.log(`\n=== 巴逆逆反指標追蹤器 [${opts.label}] ${now} ===\n`);
 
   const apifyToken = env('APIFY_TOKEN');
+
+  // 啟動預檢：提前警告設定問題，避免跑完抓取才炸
+  if (!opts.isDryRun && !process.env.LLM_API_KEY) {
+    console.warn('⚠ LLM_API_KEY 未設定，AI 分析將會失敗（可用 --dry 跳過分析）');
+  }
+  const transcriberType = (process.env.TRANSCRIBER ?? 'noop') as TranscriberType;
+  if (transcriberType === 'groq' && !process.env.GROQ_API_KEY) {
+    console.warn('⚠ TRANSCRIBER=groq 但 GROQ_API_KEY 未設定，影片轉錄將會失敗');
+  }
+
   const allPosts: UnifiedPost[] = [];
 
   // 1. 抓取 Facebook（含 retry）
@@ -121,7 +131,6 @@ async function runInner(opts: RunOptions) {
   }
 
   // 2.5. 影片轉錄（captionText 有值則跳過 Groq）
-  const transcriberType = (process.env.TRANSCRIBER ?? 'noop') as TranscriberType;
   const transcriber = createTranscriber(transcriberType);
   if (transcriber.name !== 'noop') {
     const needsTranscribe = newPosts.filter((p) => !p.transcriptText);

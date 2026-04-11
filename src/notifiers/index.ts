@@ -18,6 +18,8 @@ export function createNotifiers(): Notifier[] {
   const tgChannelId = process.env.TG_CHANNEL_ID;
   if (tgToken && tgChannelId) {
     notifiers.push(createTelegramNotifier({ botToken: tgToken, channelId: tgChannelId }));
+  } else if (tgToken || tgChannelId) {
+    console.warn(`⚠ Telegram 設定不完整：${tgToken ? '缺少 TG_CHANNEL_ID' : '缺少 TG_BOT_TOKEN'}，通知不會啟用`);
   }
 
   // Discord
@@ -25,6 +27,8 @@ export function createNotifiers(): Notifier[] {
   const dcChannelId = process.env.DISCORD_CHANNEL_ID;
   if (dcToken && dcChannelId) {
     notifiers.push(createDiscordNotifier({ botToken: dcToken, channelId: dcChannelId }));
+  } else if (dcToken || dcChannelId) {
+    console.warn(`⚠ Discord 設定不完整：${dcToken ? '缺少 DISCORD_CHANNEL_ID' : '缺少 DISCORD_BOT_TOKEN'}，通知不會啟用`);
   }
 
   // LINE
@@ -32,6 +36,8 @@ export function createNotifiers(): Notifier[] {
   const lineTo = process.env.LINE_TO;
   if (lineToken && lineTo) {
     notifiers.push(createLineNotifier({ channelAccessToken: lineToken, to: lineTo }));
+  } else if (lineToken || lineTo) {
+    console.warn(`⚠ LINE 設定不完整：${lineToken ? '缺少 LINE_TO' : '缺少 LINE_CHANNEL_ACCESS_TOKEN'}，通知不會啟用`);
   }
 
   return notifiers;

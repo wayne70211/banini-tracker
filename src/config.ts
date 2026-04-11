@@ -41,6 +41,13 @@ export function loadConfig(): Config {
   if (!raw.targets?.facebookPageUrl) {
     throw new Error('設定檔缺少 targets.facebookPageUrl 設定');
   }
+  // 半配對警告
+  if (raw.telegram) {
+    const { botToken, channelId } = raw.telegram;
+    if ((botToken && !channelId) || (!botToken && channelId)) {
+      console.warn(`⚠ telegram 設定不完整：${botToken ? '缺少 channelId' : '缺少 botToken'}，push 指令將無法使用`);
+    }
+  }
   return raw as Config;
 }
 
