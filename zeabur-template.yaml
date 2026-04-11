@@ -1,0 +1,84 @@
+apiVersion: zeabur.com/v1
+kind: Template
+metadata:
+  name: banini-tracker
+spec:
+  description: "Reverse indicator tracker for 巴逆逆(8zz) — AI-powered Facebook post analysis + multi-platform notifications"
+  icon: https://raw.githubusercontent.com/cablate/banini-tracker/master/assets/banner.svg
+  tags:
+    - Tool
+    - Automation
+  readme: |-
+    # banini-tracker
+
+    追蹤「股海冥燈」巴逆逆（8zz）的 Facebook 貼文，透過 AI 反指標分析，自動推送到 Telegram / Discord / LINE。
+
+    ## 必填設定
+
+    | 變數 | 說明 |
+    |------|------|
+    | APIFY_TOKEN | Apify API token（Facebook 抓取用） |
+    | LLM_API_KEY | LLM API key（AI 分析用） |
+
+    至少設定一個通知管道：
+
+    - **Telegram**：TG_BOT_TOKEN + TG_CHANNEL_ID
+    - **Discord**：DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID
+    - **LINE**：LINE_CHANNEL_ACCESS_TOKEN + LINE_TO
+
+    ## 排程
+
+    | 時間 | 說明 |
+    |------|------|
+    | 每天 08:00 | 早晨補漏（3 篇） |
+    | 週一~五 09:07-13:07 每 30 分 | 盤中追蹤（1 篇） |
+    | 週一~五 15:00 | 預測追蹤更新 |
+    | 每天 23:03 | 盤後彙整（3 篇） |
+
+    ## 詳細說明
+
+    [GitHub README](https://github.com/cablate/banini-tracker)
+  variables: []
+  services:
+    - name: banini-tracker
+      icon: https://raw.githubusercontent.com/cablate/banini-tracker/master/assets/banner.svg
+      template: PREBUILT
+      spec:
+        source:
+          image: ghcr.io/cablate/banini-tracker:latest
+        volumes:
+          - id: data
+            dir: /data
+        env:
+          APIFY_TOKEN:
+            default: ""
+          LLM_BASE_URL:
+            default: "https://api.deepinfra.com/v1/openai"
+          LLM_API_KEY:
+            default: ""
+          LLM_MODEL:
+            default: "MiniMaxAI/MiniMax-M2.5"
+          TG_BOT_TOKEN:
+            default: ""
+          TG_CHANNEL_ID:
+            default: ""
+          DISCORD_BOT_TOKEN:
+            default: ""
+          DISCORD_CHANNEL_ID:
+            default: ""
+          LINE_CHANNEL_ACCESS_TOKEN:
+            default: ""
+          LINE_TO:
+            default: ""
+          TRANSCRIBER:
+            default: "noop"
+          GROQ_API_KEY:
+            default: ""
+          FINMIND_TOKEN:
+            default: ""
+          DATA_DIR:
+            default: "/data"
+            readonly: true
+  locales:
+    zh-TW:
+      description: 巴逆逆（8zz）反指標追蹤器 — AI 分析 Facebook 貼文 + 多平台推送（Telegram / Discord / LINE）
