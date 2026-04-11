@@ -13,7 +13,7 @@ import { join } from 'path';
 import cron from 'node-cron';
 import { fetchFacebookPosts, type FacebookPost } from './facebook.js';
 import { analyzePosts } from './analyze.js';
-import { sendTelegramMessageWithConfig, formatReport, formatFallbackReport } from './telegram.js';
+import { createNotifiers, type ReportData, type PostSummary } from './notifiers/index.js';
 import { filterNewPosts as filterNew, markPostsSeen } from './seen.js';
 import { withRetry } from './retry.js';
 import { createTranscriber, transcribeVideoPosts, type TranscriberType } from './transcribe.js';
@@ -93,6 +93,16 @@ async function runInner(opts: RunOptions) {
   console.log(`\n=== 巴逆逆反指標追蹤器 [${opts.label}] ${now} ===\n`);
 
   const apifyToken = env('APIFY_TOKEN');
+
+  // 啟動預檢：提前警告設定問題，避免跑完抓取才炸
+  if (!opts.isDryRun && !process.env.LLM_API_KEY) {
+    console.warn('⚠ LLM_API_KEY 未設定，AI 分析將會失敗（可用 --dry 跳過分析）');
+  }
+  const transcriberType = (process.env.TRANSCRIBER ?? 'noop') as TranscriberType;
+  if (transcriberType === 'groq' && !process.env.GROQ_API_KEY) {
+    console.warn('⚠ TRANSCRIBER=groq 但 GROQ_API_KEY 未設定，影片轉錄將會失敗');
+  }
+
   const allPosts: UnifiedPost[] = [];
 
   // 1. 抓取 Facebook（含 retry）
@@ -121,7 +131,6 @@ async function runInner(opts: RunOptions) {
   }
 
   // 2.5. 影片轉錄（captionText 有值則跳過 Groq）
-  const transcriberType = (process.env.TRANSCRIBER ?? 'noop') as TranscriberType;
   const transcriber = createTranscriber(transcriberType);
   if (transcriber.name !== 'noop') {
     const needsTranscribe = newPosts.filter((p) => !p.transcriptText);
@@ -262,32 +271,38 @@ async function runInner(opts: RunOptions) {
 
   console.log('\n--- 僅供娛樂參考，不構成投資建議 ---\n');
 
-  // 7. Telegram 通知
-  const tgToken = process.env.TG_BOT_TOKEN;
-  const tgChannelId = process.env.TG_CHANNEL_ID;
+  // 7. 多平台通知
+  const notifiers = createNotifiers();
+  if (notifiers.length > 0) {
+    const postSummaries: PostSummary[] = newPosts.map((p) => ({
+      source: p.source,
+      timestamp: new Date(p.timestamp).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+      isToday: isToday(p.timestamp),
+      text: p.text.slice(0, 60),
+      url: p.url,
+    }));
+    const reportData: ReportData = {
+      analysis,
+      postCount: { fb: fbCount },
+      posts: postSummaries,
+      isFallback: llmFailed,
+    };
 
-  if (tgToken && tgChannelId) {
-    try {
-      const postSummaries = newPosts.map((p) => ({
-        source: p.source,
-        timestamp: new Date(p.timestamp).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
-        isToday: isToday(p.timestamp),
-        text: p.text.slice(0, 60),
-        url: p.url,
-      }));
-      const msg = llmFailed
-        ? formatFallbackReport(postSummaries)
-        : formatReport(analysis, { fb: fbCount }, postSummaries);
-      await withRetry(
-        () => sendTelegramMessageWithConfig({ botToken: tgToken, channelId: tgChannelId }, msg),
-        { label: 'Telegram', maxRetries: 3, baseDelayMs: 3000 },
-      );
-      console.log('[Telegram] 通知已發送');
-    } catch (err) {
-      console.error(`[Telegram] 發送失敗（已重試 3 次）: ${err instanceof Error ? err.message : err}`);
+    const results = await Promise.allSettled(
+      notifiers.map((n) =>
+        withRetry(() => n.send(reportData), { label: n.name, maxRetries: 3, baseDelayMs: 3000 }),
+      ),
+    );
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'fulfilled') {
+        console.log(`[${notifiers[i].name}] 通知已發送`);
+      } else {
+        console.error(`[${notifiers[i].name}] 發送失敗（已重試 3 次）: ${r.reason instanceof Error ? r.reason.message : r.reason}`);
+      }
     }
   } else {
-    console.log('[Telegram] 未設定 TG_BOT_TOKEN / TG_CHANNEL_ID，跳過通知');
+    console.log('[通知] 未設定任何通知管道，跳過');
   }
 
   // 8. 預測追蹤記錄

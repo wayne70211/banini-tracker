@@ -4,7 +4,7 @@
 
 # banini-tracker
 
-追蹤「股海冥燈」巴逆逆（8zz）的 Facebook 社群貼文，透過 Apify 抓取、AI 反指標分析、Telegram 即時推送，並自動追蹤預測準確度。
+追蹤「股海冥燈」巴逆逆（8zz）的 Facebook 社群貼文，透過 Apify 抓取、AI 反指標分析、多平台即時推送（Telegram / Discord / LINE），並自動追蹤預測準確度。
 
 - 辨識她提到的標的（個股、ETF、原物料）
 - 判斷她的操作（買入 / 被套 / 停損）
@@ -34,7 +34,7 @@
 > **Claude Code 使用者？** 直接把 [`skill/SKILL.md`](skill/SKILL.md) 加到你的 `.claude/skills/` 就能用。Claude 自己當分析引擎，不需要額外 LLM。
 
 支援兩種使用模式：
-- **常駐排程**：Docker 部署，自動盤中/盤後排程 + LLM 分析 + Telegram 推送 + 預測追蹤
+- **常駐排程**：Docker 部署，自動盤中/盤後排程 + LLM 分析 + 多平台推送（Telegram / Discord / LINE） + 預測追蹤
 - **CLI 工具**：`npx @cablate/banini-tracker`，搭配 Claude Code 等 AI 手動執行分析
 
 ## 快速開始（常駐排程）
@@ -42,7 +42,7 @@
 ```bash
 # 1. 複製設定
 cp .env.example .env
-# 填入 APIFY_TOKEN, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, TG_BOT_TOKEN, TG_CHANNEL_ID
+# 填入必要項目，並設定至少一個通知管道（Telegram / Discord / LINE）
 
 # 2. Docker 部署
 docker build -t banini-tracker .
@@ -82,6 +82,14 @@ LLM_API_KEY=...
 LLM_MODEL=MiniMaxAI/MiniMax-M2.5
 TG_BOT_TOKEN=...
 TG_CHANNEL_ID=-100...
+
+# Discord Bot（選填，與 Telegram 擇一或同時使用）
+DISCORD_BOT_TOKEN=...
+DISCORD_CHANNEL_ID=...
+
+# LINE（選填，與其他通知管道同時使用）
+LINE_CHANNEL_ACCESS_TOKEN=...
+LINE_TO=target_user_or_group_id
 
 # 影片轉錄（選填，啟用後自動轉錄影片貼文）
 TRANSCRIBER=groq
@@ -198,7 +206,8 @@ npx @cablate/banini-tracker push -f report.txt
 | LLM 分析（常駐模式） | 依模型而定 | 同上 | 依模型定價 |
 | 影片轉錄（Groq Whisper） | ~$0.006/分鐘 | 視影片數量 | 極低 |
 | 股價查詢（FinMind） | 免費 | 每日收盤後 | $0 |
-| Telegram 推送 | 免費 | — | $0 |
+| 通知推送（TG / DC） | 免費 | — | $0 |
+| LINE 推送 | Free plan 200 則/月 | 同上 | $0（一般用量） |
 
 > CLI 模式搭配 Claude Code 使用不需 LLM 費用，Claude 自己分析。
 > 回測歷史資料加日期篩選：~$7/千篇（$5 基本 + $2 date filter add-on）。
