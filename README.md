@@ -106,6 +106,15 @@ LLM 分析出標的後，系統自動：
 
 資料庫位置：`$DATA_DIR/banini.db`（Docker 掛載 `/data`，本地 `~/.banini-tracker/`）
 
+### 公開資料集
+
+[`data/banini-public.db`](data/banini-public.db) 提供去識別化的預測資料，包含 345 筆預測記錄與對應的價格快照，不含原始貼文內容。可直接用於分析或驗證反指標勝率。
+
+```bash
+# 快速查看
+sqlite3 data/banini-public.db "SELECT symbol_name, reverse_view, base_price, status FROM predictions LIMIT 10"
+```
+
 ## CLI 工具模式
 
 不需 clone repo，任何環境直接用：
