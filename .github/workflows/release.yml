@@ -79,3 +79,8 @@ jobs:
           docker build -t ghcr.io/${{ github.repository }}:${VERSION} -t ghcr.io/${{ github.repository }}:latest .
           docker push ghcr.io/${{ github.repository }}:${VERSION}
           docker push ghcr.io/${{ github.repository }}:latest
+
+      - name: Sync Zeabur template
+        run: npx zeabur@latest template update -c ITT41M -f zeabur-template.yaml
+        env:
+          ZEABUR_TOKEN: ${{ secrets.ZEABUR_TOKEN }}
