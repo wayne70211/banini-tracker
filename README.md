@@ -166,4 +166,10 @@ npx @cablate/banini-tracker push -f report.txt
 
 ## License
 
-MIT
+AGPL-3.0 — 你可以自由使用、修改和部署，但必須：
+
+1. **保留原始署名**：標明原作者 [cablate](https://github.com/cablate) 並附上本 repo 連結
+2. **開源衍生作品**：修改或基於本專案的作品必須以相同授權公開原始碼
+3. **網路服務同適用**：將本專案作為線上服務部署時，也必須公開原始碼
+
+詳見 [LICENSE](LICENSE)。
