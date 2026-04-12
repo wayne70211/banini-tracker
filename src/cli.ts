@@ -181,6 +181,17 @@ seenCmd
     console.error(`已清空: ${getSeenFile()}`);
   });
 
+// ── serve ────────────────────────────────────────────────
+program
+  .command('serve')
+  .description('啟動常駐服務（排程 + Web 設定頁面）')
+  .option('-p, --port <port>', 'Web UI port', '3000')
+  .action(async (opts) => {
+    if (opts.port) process.env.WEB_PORT = opts.port;
+    process.argv.push('--cron');
+    await import('./index.js');
+  });
+
 // ── push ─────────────────────────────────────────────────
 program
   .command('push')
