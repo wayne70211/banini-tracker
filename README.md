@@ -4,6 +4,10 @@
 
 # banini-tracker
 
+> **AGPL-3.0** — 使用、修改或部署本專案，必須標明原作者 **[cablate](https://github.com/cablate)**、附上[本 repo 連結](https://github.com/cablate/banini-tracker)，並以相同授權公開原始碼。網路服務部署亦同。
+>
+> 本專案於 2026/04/13 從 MIT 切換至 AGPL-3.0。此日期之前取得的版本仍適用 MIT 授權。
+
 追蹤「股海冥燈」巴逆逆（8zz）的 Facebook 社群貼文，透過 AI 反指標分析、多平台即時推送（Telegram / Discord / LINE），並自動追蹤預測準確度。
 
 - 辨識她提到的標的（個股、ETF、原物料）
@@ -166,12 +170,4 @@ npx @cablate/banini-tracker push -f report.txt
 
 ## License
 
-AGPL-3.0 — 你可以自由使用、修改和部署，但必須：
-
-1. **保留原始署名**：標明原作者 [cablate](https://github.com/cablate) 並附上本 repo 連結
-2. **開源衍生作品**：修改或基於本專案的作品必須以相同授權公開原始碼
-3. **網路服務同適用**：將本專案作為線上服務部署時，也必須公開原始碼
-
-詳見 [LICENSE](LICENSE)。
-
-> **備註**：本專案於 2026/04/13 從 MIT 切換至 AGPL-3.0。此日期之前取得的版本仍適用 MIT 授權。
+[AGPL-3.0](LICENSE)
