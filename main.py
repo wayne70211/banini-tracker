@@ -46,7 +46,7 @@ def main():
 
     # Fetch new posts
     logger.info("Fetching Facebook posts...")
-    posts = fetch_facebook_posts(pages=1)
+    posts = fetch_facebook_posts(pages=3)
     
     if not posts:
         logger.info("No posts fetched or an error occurred.")

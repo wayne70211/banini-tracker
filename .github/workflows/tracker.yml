@@ -38,6 +38,8 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/seen.json
-          git diff-index --quiet HEAD || git commit -m "chore: update seen posts state"
-          git push
+          if [ -f data/seen.json ]; then
+            git add data/seen.json
+            git diff-index --quiet HEAD || git commit -m "chore: update seen posts state"
+            git push
+          fi
