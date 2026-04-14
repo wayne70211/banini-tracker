@@ -1,0 +1,43 @@
+name: Banini Tracker
+
+on:
+  schedule:
+    # 盤中: 週一到五 09:00 - 13:30 (UTC 01:00 - 05:30) 每 30 分鐘
+    - cron: '0,30 1-5 * * 1-5'
+    # 收盤後: 週一到五 14:00 (UTC 06:00)
+    - cron: '0 6 * * 1-5'
+    # 盤後總結: 每天 23:00 (UTC 15:00)
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+
+jobs:
+  track-banini:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # 需要完整權限來 push
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Banini Tracker
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python main.py
+
+      - name: Commit and Push state
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/seen.json
+          git diff-index --quiet HEAD || git commit -m "chore: update seen posts state"
+          git push
