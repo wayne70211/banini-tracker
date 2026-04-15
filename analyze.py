@@ -19,10 +19,10 @@ class MentionedTarget(BaseModel):
 class AnalysisResponse(BaseModel):
     hasInvestmentContent: bool = Field(description="貼文是否包含投資相關內容")
     summary: str = Field(description="原始貼文摘要")
-    mentionedTargets: Optional[List[MentionedTarget]] = Field(description="提及的投資標的", default=[])
-    chainAnalysis: Optional[str] = Field(description="連鎖反應推導 (選填)")
-    actionableSuggestion: Optional[str] = Field(description="針對反指標的具體操作建議")
-    moodScore: Optional[int] = Field(description="冥燈指數 (1-10分，越高代表她越篤定，反指標威力越強)")
+    mentionedTargets: List[MentionedTarget] = Field(description="提及的投資標的", default=[])
+    chainAnalysis: Optional[str] = Field(description="連鎖反應推導 (選填)", default="")
+    actionableSuggestion: Optional[str] = Field(description="針對反指標的具體操作建議", default="")
+    moodScore: Optional[int] = Field(description="冥燈指數 (1-10分)", default=0)
 
 SYSTEM_INSTRUCTION = """
 你是一個專門分析股市反指標的 AI 助手。
@@ -54,23 +54,41 @@ def analyze_posts(posts: List[dict]) -> AnalysisResponse:
     if not combined_text.strip():
          return AnalysisResponse(hasInvestmentContent=False, summary="沒有文字內容可以分析。")
 
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=combined_text,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=AnalysisResponse,
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.4
+    client = genai.Client(api_key=api_key)
+    
+    # Try multiple models in case of quota issues (429)
+    models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash']
+    last_error = None
+
+    for model_id in models_to_try:
+        try:
+            logger.info(f"Analyzing posts with model: {model_id}")
+            response = client.models.generate_content(
+                model=model_id,
+                contents=combined_text,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=AnalysisResponse,
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.4
+                )
             )
-        )
-        data = json.loads(response.text)
-        return AnalysisResponse(**data)
-    except Exception as e:
-        logger.error(f"Error calling Gemini: {e}")
-        return AnalysisResponse(hasInvestmentContent=False, summary=f"分析失敗：{str(e)}")
+            data = json.loads(response.text)
+            return AnalysisResponse(**data)
+        except Exception as e:
+            last_error = e
+            logger.error(f"Error calling {model_id}: {e}")
+            # If it's a 429 error, try the next model
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                continue
+            else:
+                break
+
+    # If all models fail
+    return AnalysisResponse(
+        hasInvestmentContent=False, 
+        summary=f"分析失敗（所有模型皆嘗試過）：{str(last_error)}"
+    )
 
 if __name__ == "__main__":
     import dotenv
