@@ -57,7 +57,10 @@ def analyze_posts(posts: List[dict]) -> AnalysisResponse:
     client = genai.Client(api_key=api_key)
     
     # Try multiple models in case of quota issues (429)
-    models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash']
+    models_to_try = [
+        'gemini-3-flash-preview',
+        'gemini-2.5-flash'
+    ]
     last_error = None
 
     for model_id in models_to_try:
