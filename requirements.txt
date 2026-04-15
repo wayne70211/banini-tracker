@@ -1,6 +1,5 @@
-facebook-scraper
+apify-client
 requests
 google-genai
 python-dotenv
 pytz
-lxml_html_clean

@@ -5,3 +5,4 @@ dist/
 tmp-report.txt
 scripts/
 output/
+venv/
