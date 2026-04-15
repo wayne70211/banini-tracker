@@ -35,7 +35,7 @@ def fetch_facebook_posts(page_name="DieWithoutBang", pages=1):
             run_input=run_input,
             timeout_secs=300,
             memory_mbytes=1024,
-            max_cost_usd=0.05
+            max_total_charge_usd=0.05
         )
 
         # Fetch results from the run's dataset
