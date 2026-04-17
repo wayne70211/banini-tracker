@@ -19,8 +19,8 @@ def fetch_facebook_posts(page_name="DieWithoutBang", pages=1):
     posts = []
     
     run_input = {
-        "startUrls": [{"url": "https://www.facebook.com/DieWithoutBang/?locale=zh_TW"}],
-        "resultsLimit": 3,
+        "startUrls": [{"url": "https://www.facebook.com/DieWithoutBang/"}],
+        "resultsLimit": 5,
         "onlyPostsNewerThan": "1 day",
         "includeVideoTranscript": False,
         "proxyConfiguration": {
@@ -35,7 +35,7 @@ def fetch_facebook_posts(page_name="DieWithoutBang", pages=1):
             run_input=run_input,
             timeout_secs=300,
             memory_mbytes=1024,
-            max_total_charge_usd=0.05
+            max_total_charge_usd=0.1
         )
 
         # Fetch results from the run's dataset
