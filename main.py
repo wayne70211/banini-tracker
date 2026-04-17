@@ -60,6 +60,9 @@ def main():
         return
     
     logger.info(f"Found {len(new_posts)} new posts.")
+    for p in new_posts:
+        logger.info(f"New Post -> ID: {p['id']}, Time: {p['timestamp']}")
+        logger.info(f"Content Prefix: {p.get('text', '')[:200]}...")
 
     # We process new posts one by one or altogether?
     # Because they are usually short and close in time, let's analyze them together.

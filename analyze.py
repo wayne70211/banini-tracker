@@ -66,6 +66,7 @@ def analyze_posts(posts: List[dict]) -> AnalysisResponse:
     for model_id in models_to_try:
         try:
             logger.info(f"Analyzing posts with model: {model_id}")
+            logger.info(f"Text sent to agent: {combined_text}")
             response = client.models.generate_content(
                 model=model_id,
                 contents=combined_text,
@@ -76,6 +77,8 @@ def analyze_posts(posts: List[dict]) -> AnalysisResponse:
                     temperature=0.4
                 )
             )
+            logger.info(f"Agent response received from {model_id}.")
+            logger.info(f"Raw response: {response.text}")
             data = json.loads(response.text)
             return AnalysisResponse(**data)
         except Exception as e:
