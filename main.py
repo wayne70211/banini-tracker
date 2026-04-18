@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from facebook import fetch_facebook_posts
 from analyze import analyze_posts
 from discord_notifier import send_discord_notification
+from market_data import get_market_context
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -64,15 +65,19 @@ def main():
         logger.info(f"New Post -> ID: {p['id']}, Time: {p['timestamp']}")
         logger.info(f"Content Prefix: {p.get('text', '')[:200]}...")
 
+    logger.info("Extracting market context from new posts...")
+    combined_new_text = "\n".join([p.get('text', '') for p in new_posts])
+    market_info = get_market_context(combined_new_text)
+
     # We process new posts one by one or altogether?
     # Because they are usually short and close in time, let's analyze them together.
     # Or just analyze the first (latest) if there are multiple, actually all new posts together.
-    analysis = analyze_posts(new_posts)
+    analysis = analyze_posts(new_posts, market_info)
 
     logger.info(f"Analysis completed: {analysis.summary}")
 
     # Send notification
-    send_discord_notification(new_posts, analysis)
+    send_discord_notification(new_posts, analysis, market_info)
 
     # Re-save the seen IDs
     for p in new_posts:

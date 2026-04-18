@@ -34,7 +34,7 @@ SYSTEM_INSTRUCTION = """
 4. 給出一個 1-10 分的「冥燈指數」，她講得越篤定或金額越大，分數越高。
 """
 
-def analyze_posts(posts: List[dict]) -> AnalysisResponse:
+def analyze_posts(posts: List[dict], market_info: str = "") -> AnalysisResponse:
     """
     Analyzes post content using Gemini.
     """
@@ -50,6 +50,9 @@ def analyze_posts(posts: List[dict]) -> AnalysisResponse:
     combined_text = "\\n\\n---\\n\\n".join([
         f"[{p.get('timestamp')}] {p.get('text')}" for p in posts if p.get('text')
     ])
+
+    if market_info:
+        combined_text += f"\n\n[系統補充 - 當前標的即時報價與近五日走勢]\n{market_info}\n請將上述價金資訊綜合考量進入分析與操作建議中。"
 
     if not combined_text.strip():
          return AnalysisResponse(hasInvestmentContent=False, summary="沒有文字內容可以分析。")

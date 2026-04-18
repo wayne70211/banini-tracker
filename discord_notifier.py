@@ -5,7 +5,7 @@ from analyze import AnalysisResponse
 
 logger = logging.getLogger(__name__)
 
-def send_discord_notification(posts: list, analysis: AnalysisResponse):
+def send_discord_notification(posts: list, analysis: AnalysisResponse, market_info: str = ""):
     """
     Sends a Discord webhook notification with the analyzed results.
     """
@@ -17,7 +17,7 @@ def send_discord_notification(posts: list, analysis: AnalysisResponse):
     # If no investment content, we can either skip or send a simple message.
     # Usually users still want to know there was a post.
     if not analysis.hasInvestmentContent:
-        content = f"**巴逆逆發送了新貼文，但未提及投資！**\\n摘要：{analysis.summary}"
+        content = f"**巴逆逆發送了新貼文，但未提及投資！**\n摘要：{analysis.summary}"
         payload = {
             "content": content,
             "embeds": [
@@ -33,7 +33,7 @@ def send_discord_notification(posts: list, analysis: AnalysisResponse):
         # Construct detailed embed
         embed = {
             "title": f"🚨 巴逆逆反指標出沒！(冥燈指數: {analysis.moodScore}/10)",
-            "description": f"**摘要**\\n{analysis.summary}\\n\\n**操作建議**\\n{analysis.actionableSuggestion}",
+            "description": f"**摘要**\n{analysis.summary}\n\n**操作建議**\n{analysis.actionableSuggestion}",
             "color": 15158332, # Red
             "fields": []
         }
@@ -41,7 +41,7 @@ def send_discord_notification(posts: list, analysis: AnalysisResponse):
         if analysis.mentionedTargets:
             for t in analysis.mentionedTargets:
                 arrow = "🔴" if "跌" in t.reverseView else "🟢" if "漲" in t.reverseView else "⚪"
-                field_val = f"她操作：{t.herAction}\\n反指標：{t.reverseView}\\n信心度：{t.confidence}\\n原因：{t.reasoning}"
+                field_val = f"她操作：{t.herAction}\n反指標：{t.reverseView}\n信心度：{t.confidence}\n原因：{t.reasoning}"
                 embed["fields"].append({
                     "name": f"{arrow} {t.name} ({t.type})",
                     "value": field_val,
@@ -52,6 +52,13 @@ def send_discord_notification(posts: list, analysis: AnalysisResponse):
             embed["fields"].append({
                 "name": "🔗 連鎖推導",
                 "value": analysis.chainAnalysis,
+                "inline": False
+            })
+
+        if market_info:
+            embed["fields"].append({
+                "name": "📊 當前標的報價與走勢",
+                "value": market_info,
                 "inline": False
             })
 
